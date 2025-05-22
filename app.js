@@ -6,67 +6,106 @@ const { getFirestore } = require("firebase-admin/firestore");
 
 const serviceAccount = require("./SistemaWebFirebase.json"); // Nome atualizado
 
-// Inicializa Firebase
 initializeApp({
-  credential: cert(serviceAccount),
-});
-const db = getFirestore();
+    credential: cert(serviceAccount)
+})
 
-// Inicializa o app Express
-const app = express();
+const db = getFirestore()
 
-// Configura Handlebars
-app.engine("handlebars", exphbs.engine());
-app.set("view engine", "handlebars");
+app.engine("handlebars", exphbs.engine({
+    defaultLayout: "main",
+    helpers: {
+        eq: (a, b) => a === b
+    }
+}));
+app.set("view engine", "handlebars")
 
-// Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-app.use(express.static("public"));
+app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.json())
 
-// Rota principal (cadastro)
 app.get("/", function (req, res) {
-  res.render("primeira_pagina");
-});
+    res.render("primeira_pagina")
+})
 
-// Rota para cadastrar dados no Firestore
-app.post("/cadastrar", function (req, res) {
-  db.collection("agendamentos")
-    .add({
-      nome: req.body.nome,
-      telefone: req.body.telefone,
-      origem: req.body.origem,
-      data_contato: req.body.data_contato,
-      observacao: req.body.observacao,
-    })
-    
-    .then(() => {
-      console.log("Cadastro realizado com sucesso!");
-      res.redirect("/consulta");
-    })
-    .catch((err) => {
-      console.error("Erro ao cadastrar:", err);
-      res.send("Erro ao cadastrar");
-    });
-});
-
-// Rota de consulta de dados
 app.get("/consulta", async function (req, res) {
-  try {
-    const snapshot = await db.collection("agendamentos").get();
-    const agendamentos = [];
-    snapshot.forEach((doc) => {
-      agendamentos.push({ id: doc.id, ...doc.data() });
-    });
-    res.render("consulta", { agendamentos });
-  } catch (err) {
-    console.error("Erro ao consultar:", err);
-    res.send("Erro ao consultar");
-  }
+    try {
+        const agendamentosRef = db.collection('agendamentos');
+        const snapshot = await agendamentosRef.get();
+
+        const agendamentos = [];
+        snapshot.forEach(doc => {
+            agendamentos.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+
+        res.render("consulta", { agendamentos });
+    } catch (error) {
+        console.error("Erro ao buscar agendamentos:", error);
+        res.status(500).send("Erro ao consultar agendamentos.");
+    }
+})
+
+app.get("/editar/:id", async function (req, res) {
+    const id = req.params.id;
+
+    try {
+        const doc = await db.collection('agendamentos').doc(id).get();
+        if (!doc.exists) {
+            return res.status(404).send("Agendamento não encontrado");
+        }
+
+        const agendamento = doc.data();
+        agendamento.id = doc.id;
+
+        res.render('editar', { agendamento });
+    } catch (erro) {
+        res.send("Erro ao buscar agendamento: " + erro);
+    }
 });
 
-// Servidor
-const PORT = 8081;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
-});
+app.post("/cadastrar", function (req, res) {
+    var result = db.collection('agendamentos').add({
+        nome: req.body.nome,
+        telefone: req.body.telefone,
+        origem: req.body.origem,
+        data_contato: req.body.data_contato,
+        observacao: req.body.observacao
+    }).then(function () {
+        console.log('Added document');
+        res.redirect('/')
+    })
+})
+
+app.post("/atualizar/:id", async function (req, res) {
+    const id = req.params.id
+    const { nome, telefone, origem, data_contato, observacao } = req.body
+
+    try {
+        await db.collection('agendamentos').doc(id).update({
+            nome,
+            telefone,
+            origem,
+            data_contato,
+            observacao
+        });
+        res.redirect("/consulta");
+    } catch (erro) {
+        res.send('Erro ao atualizar agendamento: ' + erro);
+    }
+})
+
+app.post('/deletar/:id', async function (req, res) {
+    const id = req.params.id
+    try {
+        await db.collection('agendamentos').doc(id).delete();
+        res.redirect("/consulta");
+    } catch (erro) {
+        res.send('Erro ao deletar agendamento: ' + erro);
+    }
+})
+
+app.listen(8081, function () {
+    console.log("Servidor ativo!")
+})
